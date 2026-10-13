@@ -1,91 +1,36 @@
+main.py
 
-import asyncio
-import json
 import os
-import random
-import traceback
-from pathlib import Path
-from datetime import date
-from urllib.parse import quote_plus, urlparse
-
+import json
+import asyncio
 import discord
 import yt_dlp
+from datetime import date
+from urllib.parse import urlparse
 from discord.ext import commands
-
-# =========================================================
+from discord.ui import View, Button, Modal, TextInput, UserSelect, Select
+# ==================================================
 # HELY MÜZİK - AYARLAR
-# =========================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-CONFIG_FILE = BASE_DIR / "config.json"
-DATA_FILE = BASE_DIR / "bot_data.json"
-
+# ==================================================
 OWNER_ID = 1487816729336877106
 ROOM_CATEGORY_ID = 1559255416788230266
 PREMIUM_ROLE_ID = 1558524707752509560
-
 DAILY_SONG_LIMIT = 10
 AD_SECONDS = 20
-
-QUALITY_FORMATS = {
-    "Az": "bestaudio/best",
-    "Orta": "bestaudio/best",
-    "Çok": "bestaudio/best",
-}
-
-HELY_AD_TEXT = (
-    "💜 **HELY PREMIUM REKLAMI**\n\n"
-    "🎵 Müzik keyfine reklamsız ve sınırsız devam etmek ister misin?\n\n"
-    "✨ **HELY Premium avantajları**\n"
-    "🔊 Reklamsız müzik keyfi\n"
-    "♾️ Sınırsız dinleme hakkı\n"
-    "💜 Daha iyi bir müzik deneyimi\n\n"
-    "🛒 Premium üyeliğini **HELY Destek** botunun marketinden satın al!\n\n"
-    "💎 **HELY Premium — Müzik keyfinin yeni seviyesi!**\n\n"
-    "👇 Reklamı onaylamak için aşağıdaki butona bas."
-)
-
-NODE_PROJECT_AD_TEXT = (
-    "**# Node Project**\n\n"
-    "Sunucumuzun altyapı ve teknik ihtiyaçlarını Node Project destekliyor.\n\n"
-    "Peki nedir bu Node Project ve neden orada olmalısınız?\n\n"
-    "Node Project; yazılımla ilgilenenleri, kendi botunu geliştirmek "
-    "isteyenleri ve proje sahiplerini bir araya getiren bağımsız bir "
-    "geliştirici topluluğu. Amaç sadece sohbet etmek değil, ortaya "
-    "gerçekten çalışan projeler koymak ve birbirine destek olmak.\n\n"
-    "**Node Project Sunucusunda Sizi Neler Bekliyor?**\n\n"
-    "**1. Kod Desteği ve Hata Çözümleri**\n"
-    "Node.js, Discord.js veya genel yazılım konularında bir yerde "
-    "takıldığınızda forum kanallarında başlık açıp çözüm alabilirsiniz.\n\n"
-    "**2. Hazır Altyapılar ve Kaynaklar**\n"
-    "Sunucuda paylaşılan hazır altyapılardan ve açık kaynak kodlardan "
-    "yararlanabilirsiniz.\n\n"
-    "**3. Projenizi ve Botunuzu Öne Çıkarın**\n"
-    "Botunuzu, web sitenizi veya projenizi sergileyebilir ve geri bildirim "
-    "alabilirsiniz.\n\n"
-    "**4. Özel Bot Hizmetleri ve Ekip Kurma**\n"
-    "Topluluktaki geliştiricilerle iletişime geçebilirsiniz.\n\n"
-    "Davet bağlantısı: https://discord.gg/Fszrd9UkYG"
-)
-
-NODE_PROJECT_GIF = (
-    "https://cdn.discordapp.com/attachments/"
-    "1524889987529703544/1558794708325498920/nodeproject.gif"
-)
-
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "bot_data.json")
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
 intents.message_content = True
-
 bot = commands.Bot(
     command_prefix=("!!", "!"),
     intents=intents,
     help_command=None,
-    case_insensitive=True,
+    case_insensitive=True
 )
-
 music_queues = {}
 player_tasks = {}
 current_tracks = {}
@@ -95,1602 +40,978 @@ shuffle_enabled = {}
 music_volumes = {}
 skip_requested = set()
 stop_requested = set()
-ad_counter = 0
-
-
-# =========================================================
-# VERİ DOSYASI
-# =========================================================
-
-def load_data():
-    defaults = {
-        "users": {},
-        "rooms": {},
-        "unlimited_users": [],
-        "banned_users": [],
-        "banned_artists": [],
-        "banned_songs": [],
+# ==================================================
+# VERİLER
+# ==================================================
+DEFAULT_DATA = {
+    "users": {},
+    "rooms": {},
+    "unlimited_users": [],
+    "banned_users": [],
+    "banned_artists": [],
+    "banned_songs": [],
+    "presence": {
+        "status": "online",
+        "activity": "HELY MÜZİK"
     }
-
-    if not DATA_FILE.exists():
-        return defaults
-
+}
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        save_data(DEFAULT_DATA)
+        return json.loads(json.dumps(DEFAULT_DATA))
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as file:
-            loaded = json.load(file)
-
-        for key, value in defaults.items():
-            loaded.setdefault(key, value)
-
-        return loaded
-
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"[VERİ DOSYASI] {exc}")
-        return defaults
-
-
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for key, value in DEFAULT_DATA.items():
+            if key not in data:
+                data[key] = value
+        return data
+    except (json.JSONDecodeError, OSError):
+        return json.loads(json.dumps(DEFAULT_DATA))
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 data = load_data()
-
-
-def save_data():
-    temporary = DATA_FILE.with_suffix(".tmp")
-
-    with open(temporary, "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
-
-    os.replace(temporary, DATA_FILE)
-
-
+def is_owner(user):
+    return user.id == OWNER_ID
 def get_user_data(user_id):
     key = str(user_id)
-    today = date.today().isoformat()
-
-    user = data["users"].setdefault(
-        key,
-        {
-            "date": today,
-            "daily_remaining": DAILY_SONG_LIMIT,
-            "bonus_songs": 0,
-        },
-    )
-
-    user.setdefault("daily_remaining", DAILY_SONG_LIMIT)
-    user.setdefault("bonus_songs", 0)
-
-    if user.get("date") != today:
-        user["date"] = today
-        user["daily_remaining"] = DAILY_SONG_LIMIT
-
+    if key not in data["users"]:
+        data["users"][key] = {
+            "date": str(date.today()),
+            "used": 0,
+            "bonus": 0
+        }
+    user = data["users"][key]
+    if user.get("date") != str(date.today()):
+        user["date"] = str(date.today())
+        user["used"] = 0
+    user.setdefault("bonus", 0)
+    save_data(data)
     return user
-
-
-def is_bot_owner(user):
-    return user.id == OWNER_ID
-
-
-def is_premium(member):
-    if member is None:
-        return False
-
-    return any(role.id == PREMIUM_ROLE_ID for role in member.roles)
-
-
 def is_unlimited(user_id):
-    return str(user_id) in data["unlimited_users"]
-
-
-def has_unlimited_access(member):
     return (
-        member is not None
-        and (
-            is_premium(member)
-            or is_unlimited(member.id)
-        )
+        user_id == OWNER_ID
+        or user_id in data["unlimited_users"]
     )
-
-
 def remaining_songs(user_id):
     if is_unlimited(user_id):
-        return "Sınırsız"
-
+        return float("inf")
     user = get_user_data(user_id)
-
-    return user["daily_remaining"] + user["bonus_songs"]
-
-
+    return max(0, DAILY_SONG_LIMIT - user["used"]) + user["bonus"]
 def spend_song(user_id):
     if is_unlimited(user_id):
-        return "unlimited"
-
+        return True
     user = get_user_data(user_id)
-
-    if user["bonus_songs"] > 0:
-        user["bonus_songs"] -= 1
-        save_data()
-        return "bonus"
-
-    if user["daily_remaining"] > 0:
-        user["daily_remaining"] -= 1
-        save_data()
-        return "daily"
-
-    return None
-
-
-def refund_song(user_id, source):
+    if user["bonus"] > 0:
+        user["bonus"] -= 1
+    elif user["used"] < DAILY_SONG_LIMIT:
+        user["used"] += 1
+    else:
+        return False
+    save_data(data)
+    return True
+def refund_song(user_id):
+    if is_unlimited(user_id):
+        return
     user = get_user_data(user_id)
-
-    if source == "bonus":
-        user["bonus_songs"] += 1
-    elif source == "daily":
-        user["daily_remaining"] = min(
-            DAILY_SONG_LIMIT,
-            user["daily_remaining"] + 1,
+    if user["used"] > 0:
+        user["used"] -= 1
+    else:
+        user["bonus"] += 1
+    save_data(data)
+# ==================================================
+# YOUTUBE
+# ==================================================
+YDL_OPTIONS = {
+    "format": "bestaudio/best",
+    "quiet": True,
+    "no_warnings": True,
+    "noplaylist": True,
+    "default_search": "ytsearch",
+    "extract_flat": False,
+    "source_address": "0.0.0.0"
+}
+FFMPEG_OPTIONS = {
+    "before_options": (
+        "-reconnect 1 -reconnect_streamed 1 "
+        "-reconnect_delay_max 5"
+    ),
+    "options": "-vn"
+}
+def is_youtube_url(text):
+    try:
+        host = (urlparse(text).hostname or "").lower()
+        return host in (
+            "youtube.com",
+            "www.youtube.com",
+            "m.youtube.com",
+            "music.youtube.com",
+            "youtu.be",
+            "www.youtu.be"
         )
-
-    save_data()
-
-
-def get_room(voice_channel_id):
-    return data["rooms"].get(str(voice_channel_id))
-
-
-def get_queue(guild_id):
-    return music_queues.setdefault(guild_id, asyncio.Queue())
-
-
+    except Exception:
+        return False
+def get_video_id(url):
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if host.endswith("youtu.be"):
+            return parsed.path.strip("/").split("/")[0]
+        if "youtube.com" in host:
+            if parsed.path == "/watch":
+                from urllib.parse import parse_qs
+                return parse_qs(parsed.query).get("v", [""])[0]
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) >= 2 and parts[0] in ("shorts", "embed", "live"):
+                return parts[1]
+    except Exception:
+        pass
+    return ""
 def is_banned_track(track):
-    title = track.get("title", "").casefold()
-    artist = track.get("uploader", "").casefold()
-
-    return (
-        any(str(x).casefold() in title for x in data["banned_songs"])
-        or any(str(x).casefold() in artist for x in data["banned_artists"])
-    )
-
-
-# =========================================================
-# YOUTUBE ARAMA VE SES AKIŞI
-# =========================================================
-
-def is_youtube_url(value):
-    host = (urlparse(value).hostname or "").lower()
-
-    return host in {
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "music.youtube.com",
-        "youtu.be",
-        "www.youtu.be",
-    }
-
-
-def yt_options():
-    return {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "socket_timeout": 25,
-        "retries": 3,
-        "extractor_retries": 3,
-    }
-
-
-def search_youtube(query):
-    query = query.strip()
-
-    if not query:
-        raise ValueError("Şarkı adı veya YouTube bağlantısı boş.")
-
-    if query.startswith(("https://", "http://")):
-        if not is_youtube_url(query):
-            raise ValueError("Yalnızca YouTube bağlantıları destekleniyor.")
-
-        url = query
-
-        # Bağlantının gerçekten video olup olmadığını doğrula.
-        with yt_dlp.YoutubeDL(yt_options()) as ydl:
-            info = ydl.extract_info(url, download=False)
-
+    title = str(track.get("title", "")).casefold()
+    uploader = str(track.get("uploader", "")).casefold()
+    url = str(track.get("webpage_url", "")).casefold()
+    video_id = get_video_id(url)
+    for banned in data["banned_songs"]:
+        banned = str(banned).casefold().strip()
+        if not banned:
+            continue
+        if banned == video_id or banned == url or banned in title:
+            return True
+    for artist in data["banned_artists"]:
+        artist = str(artist).casefold().strip()
+        if artist and (
+            artist in uploader
+            or artist in title
+        ):
+            return True
+    return False
+def extract_track(query):
+    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+        if is_youtube_url(query):
+            info = ydl.extract_info(query, download=False)
+        else:
+            info = ydl.extract_info(
+                "ytsearch1:" + query,
+                download=False
+            )
+            entries = info.get("entries") or []
+            info = next(
+                (entry for entry in entries if entry),
+                None
+            )
         if not info:
-            raise ValueError("YouTube bağlantısından video bilgisi alınamadı.")
-
+            return None
         if info.get("_type") == "playlist":
-            raise ValueError("Lütfen oynatma listesi yerine tek video bağlantısı gönder.")
-
-        video_url = (
-            info.get("webpage_url")
-            or info.get("original_url")
-            or url
-        )
-
-        if not is_youtube_url(video_url):
-            raise ValueError("Geçerli bir YouTube video bağlantısı alınamadı.")
-
-        return {
-            "title": info.get("title") or "Bilinmeyen şarkı",
-            "url": video_url,
-            "uploader": info.get("uploader") or "Bilinmeyen sanatçı",
-            "duration": info.get("duration") or 0,
+            return None
+        url = info.get("webpage_url") or info.get("original_url") or ""
+        if not is_youtube_url(url):
+            return None
+        track = {
+            "title": info.get("title", "Bilinmeyen şarkı"),
+            "url": url,
+            "webpage_url": url,
+            "uploader": info.get("uploader", ""),
+            "duration": info.get("duration", 0),
+            "requester": None
         }
-
-    # Önce arama sonuçlarından ilk videoyu bul.
-    with yt_dlp.YoutubeDL(yt_options()) as ydl:
-        result = ydl.extract_info(
-            f"ytsearch1:{query}",
-            download=False,
-        )
-
-    entries = result.get("entries", []) if result else []
-    video = next((item for item in entries if item), None)
-
-    if not video:
-        raise ValueError("YouTube aramasında sonuç bulunamadı.")
-
-    video_url = (
-        video.get("webpage_url")
-        or video.get("url")
-        or ""
+        if is_banned_track(track):
+            return {"banned": True, **track}
+        track["audio_url"] = info.get("url")
+        return track
+async def search_track(query):
+    return await asyncio.to_thread(extract_track, query)
+async def refresh_audio_url(track):
+    def extract():
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            info = ydl.extract_info(
+                track["webpage_url"],
+                download=False
+            )
+            return info.get("url")
+    return await asyncio.to_thread(extract)
+# ==================================================
+# ÖZEL ODA
+# ==================================================
+def get_room(guild_id):
+    return data["rooms"].get(str(guild_id))
+def get_queue(guild_id):
+    return music_queues.setdefault(guild_id, [])
+def is_room_owner(ctx):
+    room = get_room(ctx.guild.id)
+    return (
+        room is not None
+        and room.get("owner_id") == ctx.author.id
     )
-
-    video_id = video.get("id")
-
-    if video_id and not video_url.startswith("http"):
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-    if not is_youtube_url(video_url):
-        raise ValueError("Arama sonucundan geçerli YouTube bağlantısı alınamadı.")
-
-    return {
-        "title": video.get("title") or "Bilinmeyen şarkı",
-        "url": video_url,
-        "uploader": video.get("uploader") or "Bilinmeyen sanatçı",
-        "duration": video.get("duration") or 0,
-    }
-
-
-def get_audio_url(video_url, quality):
-    options = yt_options()
-    options["format"] = QUALITY_FORMATS.get(
-        quality,
-        QUALITY_FORMATS["Orta"],
-    )
-
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(video_url, download=False)
-
-    if not info:
-        raise ValueError("YouTube ses bilgisi alınamadı.")
-
-    audio_url = info.get("url")
-
-    if not audio_url and info.get("requested_formats"):
-        for item in info["requested_formats"]:
-            if item.get("acodec") != "none" and item.get("url"):
-                audio_url = item["url"]
-                break
-
-    if not audio_url:
-        raise ValueError("YouTube ses akışı bağlantısı boş döndü.")
-
-    return audio_url
-
-
-def format_duration(seconds):
-    if not seconds:
-        return "Bilinmiyor"
-
-    seconds = int(seconds)
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-
-    if hours:
-        return f"{hours}:{minutes:02}:{seconds:02}"
-
-    return f"{minutes}:{seconds:02}"
-
-
-# =========================================================
-# ÖZEL ODA İZİNLERİ
-# =========================================================
-
-def private_room_overwrites(guild, owner):
-    """
-    Varsayılan rolün kanalı görmesini ve bağlanmasını engeller.
-    Oda sahibi ile bot için açık izin verir.
-    """
-
+async def create_private_room(guild, owner):
+    category = guild.get_channel(ROOM_CATEGORY_ID)
+    if not isinstance(category, discord.CategoryChannel):
+        raise RuntimeError("Özel oda kategorisi bulunamadı.")
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(
             view_channel=False,
-            connect=False,
+            connect=False
         ),
         owner: discord.PermissionOverwrite(
             view_channel=True,
             connect=True,
-            speak=True,
-            send_messages=True,
-            read_message_history=True,
+            speak=True
         ),
-    }
-
-    me = guild.me
-
-    if me is not None:
-        overwrites[me] = discord.PermissionOverwrite(
+        guild.me: discord.PermissionOverwrite(
             view_channel=True,
             connect=True,
             speak=True,
-            send_messages=True,
-            read_message_history=True,
-            embed_links=True,
-            attach_files=True,
+            manage_channels=True
         )
-
-    return overwrites
-
-
-async def send_voice_chat(channel, **kwargs):
-    try:
-        return await channel.send(**kwargs)
-    except Exception as exc:
-        print(
-            f"[KANAL SOHBETİ] {type(exc).__name__}: {exc}"
-        )
-        return None
-
-
-def room_embed(room):
-    owner_id = int(room["owner_id"])
-    guild = bot.get_guild(int(room["guild_id"]))
-    owner = guild.get_member(owner_id) if guild else None
-
-    if owner and has_unlimited_access(owner):
-        rights = "Sınırsız"
-    elif is_unlimited(owner_id):
-        rights = "Sınırsız"
-    else:
-        rights = str(remaining_songs(owner_id))
-
-    embed = discord.Embed(
-        title="🎧 HELY MÜZİK",
-        description=(
-            f"👑 **Oda sahibi:** <@{owner_id}>\n"
-            f"🎵 **Kalan şarkı hakkı:** {rights}\n"
-            f"🔊 **Kalite:** {room.get('quality', 'Orta')}\n\n"
-            "**Müzik başlatmak için**\n"
-            "`!Play şarkı adı`\n"
-            "veya\n"
-            "`!Play YouTube bağlantısı`\n\n"
-            "Aşağıdaki düğmelerden ses kalitesini seçebilirsin.\n"
-            "Müzik çalarken kontrol paneli açılır."
-        ),
-        color=discord.Color.blurple(),
+    }
+    channel = await guild.create_voice_channel(
+        name=f"{owner.display_name} • HELY",
+        category=category,
+        overwrites=overwrites,
+        reason="HELY MÜZİK özel ses odası"
     )
-
-    embed.set_footer(
-        text="Günlük 10 şarkı hakkı • Kalite seçimi hakkı değiştirmez"
-    )
-
-    return embed
-
-
-async def refresh_room(voice_id):
-    room = get_room(voice_id)
-
-    if not room:
-        return
-
-    guild = bot.get_guild(int(room["guild_id"]))
-    channel = guild.get_channel(int(voice_id)) if guild else None
-
-    if channel is None:
-        return
-
-    embed = room_embed(room)
-    view = QualityView(voice_id)
-    message_id = room.get("status_message_id")
-
-    if message_id:
-        try:
-            message = await channel.fetch_message(int(message_id))
-            await message.edit(embed=embed, view=view)
-            return
-        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-            pass
-
-    message = await send_voice_chat(channel, embed=embed, view=view)
-
-    if message:
-        room["status_message_id"] = message.id
-        save_data()
-
-
-# =========================================================
-# KALİTE DÜĞMELERİ
-# =========================================================
-
-class QualityView(discord.ui.View):
-    def __init__(self, voice_id):
-        super().__init__(timeout=3600)
-        self.voice_id = int(voice_id)
-
-    async def change_quality(self, interaction, quality):
-        room = get_room(self.voice_id)
-
-        if not room:
-            await interaction.response.send_message(
-                "Bu oda artık mevcut değil.",
-                ephemeral=True,
-            )
-            return
-
-        if (
-            interaction.user.id != int(room["owner_id"])
-            and not is_bot_owner(interaction.user)
-        ):
-            await interaction.response.send_message(
-                "Kaliteyi yalnızca oda sahibi değiştirebilir.",
-                ephemeral=True,
-            )
-            return
-
-        room["quality"] = quality
-        save_data()
-
-        await interaction.response.edit_message(
-            embed=room_embed(room),
-            view=self,
-        )
-
-    @discord.ui.button(label="Az", emoji="🔈", style=discord.ButtonStyle.secondary)
-    async def low(self, interaction, button):
-        await self.change_quality(interaction, "Az")
-
-    @discord.ui.button(label="Orta", emoji="🔉", style=discord.ButtonStyle.primary)
-    async def medium(self, interaction, button):
-        await self.change_quality(interaction, "Orta")
-
-    @discord.ui.button(label="Çok", emoji="🔊", style=discord.ButtonStyle.success)
-    async def high(self, interaction, button):
-        await self.change_quality(interaction, "Çok")
-
-
-# =========================================================
-# ODA OLUŞTURMA PANELİ
-# =========================================================
-
-class CreateRoomView(discord.ui.View):
-    def __init__(self):
+    data["rooms"][str(guild.id)] = {
+        "channel_id": channel.id,
+        "owner_id": owner.id
+    }
+    save_data(data)
+    return channel
+# ==================================================
+# MÜZİK PANELİ
+# ==================================================
+class MusicControls(View):
+    def __init__(self, guild_id):
         super().__init__(timeout=None)
-
-    @discord.ui.button(
-        label="ODA OLUŞTUR!",
-        emoji="🎧",
-        style=discord.ButtonStyle.success,
-        custom_id="hely_music_create_room",
-    )
-    async def create_room(self, interaction, button):
-        guild = interaction.guild
-
-        if guild is None:
-            await interaction.response.send_message(
-                "Bu buton yalnızca sunucuda kullanılabilir.",
-                ephemeral=True,
-            )
-            return
-
-        for room in data["rooms"].values():
-            if (
-                int(room["guild_id"]) == guild.id
-                and int(room["owner_id"]) == interaction.user.id
-            ):
-                existing = guild.get_channel(int(room["voice_id"]))
-
-                if existing:
-                    await interaction.response.send_message(
-                        f"Zaten bir müzik odan var: {existing.mention}",
-                        ephemeral=True,
-                    )
-                    return
-
-        category = guild.get_channel(ROOM_CATEGORY_ID)
-
-        if not isinstance(category, discord.CategoryChannel):
-            await interaction.response.send_message(
-                "Müzik odaları kategorisi bulunamadı. "
-                "Kategori ID'sini kontrol et.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True, thinking=True)
-
-        channel = None
-
-        try:
-            overwrites = private_room_overwrites(
-                guild,
-                interaction.user,
-            )
-
-            channel = await guild.create_voice_channel(
-                name=f"{interaction.user.display_name[:70]} müzik odası",
-                category=category,
-                overwrites=overwrites,
-                reason="HELY MÜZİK özel oda oluşturma",
-            )
-
-            room = {
-                "guild_id": guild.id,
-                "owner_id": interaction.user.id,
-                "voice_id": channel.id,
-                "quality": "Orta",
-                "status_message_id": None,
-            }
-
-            data["rooms"][str(channel.id)] = room
-            save_data()
-
-            message = await send_voice_chat(
-                channel,
-                content=f"🎉 {interaction.user.mention}, özel müzik odan hazır!",
-                embed=room_embed(room),
-                view=QualityView(channel.id),
-            )
-
-            if message:
-                room["status_message_id"] = message.id
-                save_data()
-
-            await interaction.followup.send(
-                f"🔒 **Özel müzik odan oluşturuldu:** {channel.mention}\n"
-                "🎵 Müzik için `!Play şarkı adı` yaz.",
-                ephemeral=True,
-            )
-
-        except Exception as exc:
-            traceback.print_exc()
-
-            if channel:
-                data["rooms"].pop(str(channel.id), None)
-                save_data()
-
-                try:
-                    await channel.delete()
-                except discord.HTTPException:
-                    pass
-
-            await interaction.followup.send(
-                "❌ Oda oluşturulamadı. Konsoldaki hatayı ve bot izinlerini kontrol et.",
-                ephemeral=True,
-            )
-
-
-@bot.command(name="pannels!")
-async def panels(ctx):
-    embed = discord.Embed(
-        title="🎵 Müzik Keyfi!",
-        description=(
-            "Kendi özel müzik odanı oluştur ve YouTube'dan müzik dinle.\n\n"
-            "🎧 **Günlük 10 şarkı hakkı**\n"
-            "🔒 Özel oda erişimi\n"
-            "🎛️ Butonlarla müzik kontrolü\n\n"
-            "💎 **HELY Premium**\n"
-            "Reklamsız ve sınırsız müzik."
-        ),
-        color=discord.Color.blurple(),
-    )
-
-    await ctx.send(embed=embed, view=CreateRoomView())
-
-
-# =========================================================
-# ŞARKI SÖZLERİ ARAMA BAĞLANTISI
-# =========================================================
-
-class LyricsView(discord.ui.View):
-    def __init__(self, track):
-        super().__init__(timeout=120)
-
-        query = (
-            f"{track.get('title', '')} "
-            f"{track.get('uploader', '')} şarkı sözleri"
-        )
-
-        self.add_item(
-            discord.ui.Button(
-                label="🎤 Şarkı Sözlerini Ara",
-                style=discord.ButtonStyle.link,
-                url="https://www.google.com/search?q=" + quote_plus(query),
-            )
-        )
-
-
-# =========================================================
-# MÜZİK KONTROL PANELİ
-# =========================================================
-
-class MusicControls(discord.ui.View):
-    def __init__(self, voice_id):
-        super().__init__(timeout=3600)
-        self.voice_id = int(voice_id)
-
-    async def check_owner(self, interaction):
-        room = get_room(self.voice_id)
-
+        self.guild_id = guild_id
+    async def interaction_check(self, interaction):
+        room = get_room(self.guild_id)
         if not room:
             await interaction.response.send_message(
-                "Müzik odası artık mevcut değil.",
-                ephemeral=True,
+                "Özel oda bulunamadı.",
+                ephemeral=True
             )
             return False
-
         if (
-            interaction.user.id != int(room["owner_id"])
-            and not is_bot_owner(interaction.user)
+            interaction.user.id != room["owner_id"]
+            and interaction.user.id != OWNER_ID
         ):
             await interaction.response.send_message(
-                "Bu paneli yalnızca oda sahibi kullanabilir.",
-                ephemeral=True,
+                "Bu müzik panelini yalnızca oda sahibi kullanabilir.",
+                ephemeral=True
             )
             return False
-
         return True
-
-    @discord.ui.button(label="Önceki", emoji="⏮️", style=discord.ButtonStyle.secondary, row=0)
-    async def previous(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        guild_id = interaction.guild.id
-        history = previous_tracks.get(guild_id, [])
-
-        if not history:
-            await interaction.response.send_message(
-                "Önceki şarkı bulunamadı.",
-                ephemeral=True,
-            )
-            return
-
-        track = history.pop()
-        get_queue(guild_id)._queue.appendleft(track)
-
-        voice = interaction.guild.voice_client
-
-        if voice and (voice.is_playing() or voice.is_paused()):
-            skip_requested.add(guild_id)
-            voice.stop()
-
-        await interaction.response.send_message(
-            "⏮️ Önceki şarkı kuyruğa eklendi.",
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Duraklat / Devam", emoji="⏯️", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(
+        label="Duraklat / Devam",
+        emoji="⏯️",
+        style=discord.ButtonStyle.primary
+    )
     async def pause_resume(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
         voice = interaction.guild.voice_client
-
-        if voice and voice.is_playing():
-            voice.pause()
-            text = "⏸️ Müzik duraklatıldı."
-        elif voice and voice.is_paused():
-            voice.resume()
-            text = "▶️ Müzik devam ediyor."
-        else:
-            text = "Şu anda çalan şarkı yok."
-
-        await interaction.response.send_message(text, ephemeral=True)
-
-    @discord.ui.button(label="Sonraki", emoji="⏭️", style=discord.ButtonStyle.secondary, row=0)
-    async def skip(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        guild_id = interaction.guild.id
-        voice = interaction.guild.voice_client
-
-        if voice and (voice.is_playing() or voice.is_paused()):
-            skip_requested.add(guild_id)
-            voice.stop()
-            text = "⏭️ Şarkı atlandı."
-        else:
-            text = "Atlanacak şarkı yok."
-
-        await interaction.response.send_message(text, ephemeral=True)
-
-    @discord.ui.button(label="Karıştır", emoji="🔀", style=discord.ButtonStyle.secondary, row=1)
-    async def shuffle(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        guild_id = interaction.guild.id
-        queue = get_queue(guild_id)
-
-        shuffle_enabled[guild_id] = not shuffle_enabled.get(guild_id, False)
-
-        if shuffle_enabled[guild_id] and queue.qsize() > 1:
-            items = list(queue._queue)
-            random.shuffle(items)
-            queue._queue.clear()
-            queue._queue.extend(items)
-
-        state = "açıldı" if shuffle_enabled[guild_id] else "kapatıldı"
-
-        await interaction.response.send_message(
-            f"🔀 Karıştırma {state}.",
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Döngü", emoji="🔁", style=discord.ButtonStyle.secondary, row=1)
-    async def repeat(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        guild_id = interaction.guild.id
-        repeat_enabled[guild_id] = not repeat_enabled.get(guild_id, False)
-
-        state = "açıldı" if repeat_enabled[guild_id] else "kapatıldı"
-
-        await interaction.response.send_message(
-            f"🔁 Döngü {state}.",
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Kuyruk", emoji="📜", style=discord.ButtonStyle.secondary, row=1)
-    async def show_queue(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        tracks = list(get_queue(interaction.guild.id)._queue)
-
-        if not tracks:
+        if not voice or not voice.is_playing() and not voice.is_paused():
             await interaction.response.send_message(
-                "Kuyruk boş.",
-                ephemeral=True,
+                "Şu anda çalan bir şarkı yok.",
+                ephemeral=True
             )
             return
-
-        description = "\n".join(
-            f"**{i}.** {item['title']}"
-            for i, item in enumerate(tracks[:15], start=1)
-        )
-
+        if voice.is_paused():
+            voice.resume()
+            message = "Müzik devam ediyor."
+        else:
+            voice.pause()
+            message = "Müzik duraklatıldı."
         await interaction.response.send_message(
-            embed=discord.Embed(
-                title="🎶 HELY MÜZİK • Kuyruk",
-                description=description,
-                color=discord.Color.blurple(),
-            ),
-            ephemeral=True,
+            message,
+            ephemeral=True
         )
-
-    @discord.ui.button(label="Ses +", emoji="🔊", style=discord.ButtonStyle.secondary, row=2)
-    async def volume_up(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        guild_id = interaction.guild.id
-        volume = min(1.0, music_volumes.get(guild_id, 0.5) + 0.1)
-        music_volumes[guild_id] = volume
-
+    @discord.ui.button(
+        label="Atla",
+        emoji="⏭️",
+        style=discord.ButtonStyle.secondary
+    )
+    async def skip(self, interaction, button):
         voice = interaction.guild.voice_client
-
-        if voice and isinstance(voice.source, discord.PCMVolumeTransformer):
-            voice.source.volume = volume
-
-        await interaction.response.send_message(
-            f"🔊 Ses: {round(volume * 100)}%",
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Ses −", emoji="🔉", style=discord.ButtonStyle.secondary, row=2)
-    async def volume_down(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        guild_id = interaction.guild.id
-        volume = max(0.0, music_volumes.get(guild_id, 0.5) - 0.1)
-        music_volumes[guild_id] = volume
-
-        voice = interaction.guild.voice_client
-
-        if voice and isinstance(voice.source, discord.PCMVolumeTransformer):
-            voice.source.volume = volume
-
-        await interaction.response.send_message(
-            f"🔉 Ses: {round(volume * 100)}%",
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Şarkı Sözleri", emoji="🎤", style=discord.ButtonStyle.success, row=3)
-    async def lyrics(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        track = current_tracks.get(interaction.guild.id)
-
-        if not track:
+        if voice and (voice.is_playing() or voice.is_paused()):
+            skip_requested.add(self.guild_id)
+            voice.stop()
+            await interaction.response.send_message(
+                "Şarkı atlandı.",
+                ephemeral=True
+            )
+        else:
             await interaction.response.send_message(
                 "Şu anda çalan şarkı yok.",
-                ephemeral=True,
+                ephemeral=True
             )
-            return
-
-        await interaction.response.send_message(
-            f"🎤 **{track['title']}** için şarkı sözleri araması:",
-            view=LyricsView(track),
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Yenile", emoji="🔄", style=discord.ButtonStyle.secondary, row=3)
-    async def refresh(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        await refresh_room(self.voice_id)
-
-        await interaction.response.send_message(
-            "🔄 Oda bilgileri yenilendi.",
-            ephemeral=True,
-        )
-
-    @discord.ui.button(label="Durdur", emoji="⏹️", style=discord.ButtonStyle.danger, row=3)
+    @discord.ui.button(
+        label="Durdur",
+        emoji="⏹️",
+        style=discord.ButtonStyle.danger
+    )
     async def stop(self, interaction, button):
-        if not await self.check_owner(interaction):
-            return
-
-        guild_id = interaction.guild.id
-        stop_requested.add(guild_id)
-        skip_requested.discard(guild_id)
-
-        queue = get_queue(guild_id)
-
-        while not queue.empty():
-            try:
-                queue.get_nowait()
-                queue.task_done()
-            except asyncio.QueueEmpty:
-                break
-
         voice = interaction.guild.voice_client
-
         if voice:
+            stop_requested.add(self.guild_id)
+            music_queues[self.guild_id] = []
             if voice.is_playing() or voice.is_paused():
                 voice.stop()
-
-            try:
-                await voice.disconnect(force=True)
-            except discord.HTTPException:
-                pass
-
+            await voice.disconnect()
         await interaction.response.send_message(
-            "⏹️ Müzik durduruldu. Odan silinmedi.",
-            ephemeral=True,
+            "Müzik durduruldu ve kuyruk temizlendi.",
+            ephemeral=True
         )
-
-
-# =========================================================
+    @discord.ui.button(
+        label="Kuyruk",
+        emoji="📜",
+        style=discord.ButtonStyle.secondary
+    )
+    async def queue(self, interaction, button):
+        tracks = get_queue(self.guild_id)
+        if not tracks:
+            message = "Kuyrukta bekleyen şarkı yok."
+        else:
+            lines = [
+                f"**{i}.** {track['title']}"
+                for i, track in enumerate(tracks[:10], 1)
+            ]
+            message = "\n".join(lines)
+        await interaction.response.send_message(
+            message,
+            ephemeral=True
+        )
+# ==================================================
 # REKLAM
-# =========================================================
-
-class AdvertisementView(discord.ui.View):
-    def __init__(self, requester_id):
-        super().__init__(timeout=180)
-        self.requester_id = int(requester_id)
-        self.confirmed = asyncio.Event()
-
+# ==================================================
+class AdvertisementView(View):
+    def __init__(self):
+        super().__init__(timeout=AD_SECONDS)
+        self.confirmed = False
     @discord.ui.button(
         label="Reklamı Gördüm",
         emoji="✅",
-        style=discord.ButtonStyle.success,
+        style=discord.ButtonStyle.success
     )
     async def confirm(self, interaction, button):
-        if interaction.user.id != self.requester_id:
-            await interaction.response.send_message(
-                "Bu reklamı yalnızca şarkıyı isteyen kişi onaylayabilir.",
-                ephemeral=True,
-            )
-            return
-
-        if self.confirmed.is_set():
-            await interaction.response.send_message(
-                "Reklam zaten onaylandı.",
-                ephemeral=True,
-            )
-            return
-
-        for item in self.children:
-            item.disabled = True
-
-        await interaction.response.edit_message(
-            embed=discord.Embed(
-                title="⏳ Reklam onaylandı",
-                description="20 saniye sonra müzik devam edecek.",
-                color=discord.Color.orange(),
-            ),
-            view=self,
+        self.confirmed = True
+        await interaction.response.send_message(
+            "Teşekkürler! Müzik devam edebilir.",
+            ephemeral=True
         )
-
-        self.confirmed.set()
-
-
-async def play_ad(channel, requester):
-    global ad_counter
-
-    ad_counter += 1
-    node_ad = ad_counter % 2 == 0
-
-    if node_ad:
-        embed = discord.Embed(
-            title="Node Project",
-            description=NODE_PROJECT_AD_TEXT,
-            color=discord.Color.blurple(),
-        )
-        embed.add_field(
-            name="Davet bağlantısı",
-            value="https://discord.gg/Fszrd9UkYG",
-            inline=False,
-        )
-        embed.set_image(url=NODE_PROJECT_GIF)
-    else:
-        embed = discord.Embed(
-            title="💜 HELY Premium Reklamı",
-            description=HELY_AD_TEXT,
-            color=discord.Color.purple(),
-        )
-
-    view = AdvertisementView(requester.id)
-
-    message = await send_voice_chat(
-        channel,
-        content=requester.mention,
-        embed=embed,
-        view=view,
+        self.stop()
+async def show_advertisement(ctx):
+    if is_unlimited(ctx.author.id):
+        return
+    embed = discord.Embed(
+        title="HELY MÜZİK",
+        description=(
+            "Müzik hizmetini desteklemek için "
+            "reklam mesajını onayla."
+        ),
+        color=discord.Color.blue()
     )
-
-    if not message:
-        return
-
-    try:
-        await asyncio.wait_for(view.confirmed.wait(), timeout=180)
-    except asyncio.TimeoutError:
-        try:
-            await message.edit(
-                content=None,
-                embed=discord.Embed(
-                    title="⌛ Reklam onayı bekleniyor",
-                    description="Reklam onaylanmadığı için sonraki şarkı bekliyor.",
-                    color=discord.Color.orange(),
-                ),
-                view=None,
+    view = AdvertisementView()
+    await ctx.send(embed=embed, view=view)
+    await view.wait()
+# ==================================================
+# OYNATMA MOTORU
+# ==================================================
+async def music_player(ctx):
+    guild_id = ctx.guild.id
+    while get_queue(guild_id):
+        if guild_id in stop_requested:
+            stop_requested.discard(guild_id)
+            break
+        track = get_queue(guild_id).pop(0)
+        if is_banned_track(track):
+            await ctx.send(
+                f"🚫 **{track['title']}** yasaklandığı için atlandı."
             )
-        except discord.HTTPException:
-            pass
-
-        return
-
-    await asyncio.sleep(AD_SECONDS)
-
-    try:
-        await message.edit(
-            content=None,
-            embed=discord.Embed(
-                title="✅ Reklam sona erdi",
-                description="İyi dinlemeler! 🎵",
-                color=discord.Color.green(),
-            ),
-            view=None,
-        )
-    except discord.HTTPException:
-        pass
-
-
-# =========================================================
-# MÜZİK ÇALAR
-# =========================================================
-
-async def music_player(guild_id):
-    queue = get_queue(guild_id)
-
-    while True:
-        track = await queue.get()
-
+            continue
+        room = get_room(guild_id)
+        if not room:
+            await ctx.send("Özel oda bulunamadı.")
+            break
+        channel = ctx.guild.get_channel(room["channel_id"])
+        if not isinstance(channel, discord.VoiceChannel):
+            await ctx.send("Ses kanalı bulunamadı.")
+            break
+        voice = ctx.guild.voice_client
         try:
-            guild = bot.get_guild(guild_id)
-
-            if guild is None:
+            if voice is None:
+                voice = await channel.connect()
+            elif voice.channel != channel:
+                await voice.move_to(channel)
+            audio_url = await refresh_audio_url(track)
+            if not audio_url:
+                await ctx.send("Şarkı bağlantısı alınamadı.")
                 continue
-
-            room = get_room(track["voice_channel_id"])
-
-            if room is None:
-                continue
-
-            channel = guild.get_channel(track["voice_channel_id"])
-
-            if channel is None:
-                continue
-
-            requester = guild.get_member(track["requester_id"])
-
-            if requester is None:
-                try:
-                    requester = await guild.fetch_member(track["requester_id"])
-                except discord.HTTPException:
-                    continue
-
-            if requester.id in data["banned_users"]:
-                continue
-
-            unlimited = has_unlimited_access(requester)
-
-            if not unlimited and remaining_songs(requester.id) <= 0:
-                await send_voice_chat(
-                    channel,
-                    content=f"{requester.mention}, günlük şarkı hakkın bitti.",
+            if not spend_song(track["requester"]):
+                await ctx.send(
+                    f"<@{track['requester']}> günlük şarkı hakkını kullandı."
                 )
                 continue
-
-            if is_banned_track(track):
-                await send_voice_chat(
-                    channel,
-                    content="⛔ Bu şarkı veya sanatçı engellenmiş.",
-                )
-                continue
-
-            quality = room.get("quality", "Orta")
-
-            try:
-                audio_url = await asyncio.to_thread(
-                    get_audio_url,
-                    track["url"],
-                    quality,
-                )
-            except Exception as exc:
-                print(f"[YOUTUBE SES HATASI] {type(exc).__name__}: {exc}")
-                traceback.print_exc()
-
-                await send_voice_chat(
-                    channel,
-                    content=(
-                        "❌ YouTube ses akışı alınamadı. "
-                        "FadeHost konsolunda YOUTUBE SES HATASI satırını kontrol et."
-                    ),
-                )
-                continue
-
-            voice = guild.voice_client
-
-            try:
-                if voice is None:
-                    voice = await channel.connect()
-                elif voice.channel.id != channel.id:
-                    await voice.move_to(channel)
-            except Exception as exc:
-                print(f"[SES BAĞLANTISI HATASI] {exc}")
-
-                await send_voice_chat(
-                    channel,
-                    content="❌ Ses kanalına bağlanılamadı. Bot izinlerini kontrol et.",
-                )
-                continue
-
-            right_source = spend_song(requester.id)
-
-            if right_source is None:
-                await send_voice_chat(
-                    channel,
-                    content=f"{requester.mention}, dinleme hakkın kalmadı.",
-                )
-                continue
-
             current_tracks[guild_id] = track
-
-            history = previous_tracks.setdefault(guild_id, [])
-            history.append(track.copy())
-
-            if len(history) > 25:
-                del history[:-25]
-
-            await refresh_room(channel.id)
-
             embed = discord.Embed(
                 title="🎵 HELY MÜZİK",
                 description=(
-                    f"**Şimdi çalıyor:** [{track['title']}]({track['url']})\n"
-                    f"**Sanatçı:** {track['uploader']}\n"
-                    f"**Süre:** {format_duration(track['duration'])}\n"
-                    f"**İsteyen:** {requester.mention}\n\n"
-                    "Aşağıdaki butonlardan müziği yönetebilirsin."
+                    f"**Şimdi çalıyor:** [{track['title']}]"
+                    f"({track['webpage_url']})\n"
+                    f"**İsteyen:** <@{track['requester']}>"
                 ),
-                color=discord.Color.blurple(),
+                color=discord.Color.blue()
             )
-
-            await send_voice_chat(
-                channel,
+            await ctx.send(
                 embed=embed,
-                view=MusicControls(channel.id),
+                view=MusicControls(guild_id)
             )
-
-            loop = asyncio.get_running_loop()
-            finished = loop.create_future()
-
-            def after_playback(error):
-                def resolve():
-                    if not finished.done():
-                        finished.set_result(error)
-
-                loop.call_soon_threadsafe(resolve)
-
-            try:
-                source = discord.PCMVolumeTransformer(
-                    discord.FFmpegPCMAudio(
-                        audio_url,
-                        before_options=(
-                            "-reconnect 1 -reconnect_streamed 1 "
-                            "-reconnect_delay_max 5"
-                        ),
-                        options="-vn",
-                    ),
-                    volume=music_volumes.get(guild_id, 0.5),
-                )
-
-                voice.play(source, after=after_playback)
-                error = await finished
-
-                if error:
-                    print(f"[FFMPEG OYNATMA HATASI] {error}")
-                    refund_song(requester.id, right_source)
-
-                    await send_voice_chat(
-                        channel,
-                        content="⚠️ Şarkı oynatılamadı. Dinleme hakkın iade edildi.",
-                    )
-                    continue
-
-            except Exception as exc:
-                print(f"[OYNATMA HATASI] {type(exc).__name__}: {exc}")
-                traceback.print_exc()
-
-                refund_song(requester.id, right_source)
-
-                await send_voice_chat(
-                    channel,
-                    content="❌ Şarkı başlatılamadı. Dinleme hakkın iade edildi.",
-                )
-                continue
-
+            finished = asyncio.Event()
+            error = None
+            def after_playback(exc):
+                nonlocal error
+                error = exc
+                try:
+                    ctx.bot.loop.call_soon_threadsafe(finished.set)
+                except RuntimeError:
+                    pass
+            volume = music_volumes.get(guild_id, 0.5)
+            source = discord.PCMVolumeTransformer(
+                discord.FFmpegPCMAudio(
+                    audio_url,
+                    **FFMPEG_OPTIONS
+                ),
+                volume=volume
+            )
+            voice.play(source, after=after_playback)
+            await finished.wait()
+            if error:
+                refund_song(track["requester"])
+                await ctx.send("Şarkı oynatılırken hata oluştu.")
+            else:
+                previous_tracks[guild_id] = track
             if guild_id in stop_requested:
                 stop_requested.discard(guild_id)
-                continue
-
+                break
             if guild_id in skip_requested:
                 skip_requested.discard(guild_id)
                 continue
-
-            if repeat_enabled.get(guild_id, False):
-                queue._queue.appendleft(track.copy())
-
-            if not has_unlimited_access(requester):
-                await play_ad(channel, requester)
-
+            await show_advertisement(ctx)
         except Exception as exc:
-            print(f"[MÜZİK DÖNGÜSÜ HATASI] {type(exc).__name__}: {exc}")
-            traceback.print_exc()
-
-        finally:
-            queue.task_done()
-
-
-# =========================================================
-# !Play KOMUTU
-# =========================================================
-
+            await ctx.send(
+                f"Müzik hatası: `{type(exc).__name__}`"
+            )
+    player_tasks.pop(guild_id, None)
+# ==================================================
+# !PLAY - HERKES KULLANABİLİR
+# ==================================================
 @bot.command(name="play", aliases=["p"])
 async def play(ctx, *, query=None):
-    if ctx.guild is None:
-        return
-
-    if ctx.author.id in data["banned_users"]:
-        await ctx.send("⛔ Müzik kullanman engellenmiş.")
-        return
-
-    if not ctx.author.voice or not ctx.author.voice.channel:
-        await ctx.send("Önce kendi özel müzik odana katıl.")
-        return
-
-    voice_channel = ctx.author.voice.channel
-    room = get_room(voice_channel.id)
-
-    if room is None:
-        await ctx.send("Bu ses kanalı HELY MÜZİK odası değil.")
-        return
-
-    if (
-        ctx.author.id != int(room["owner_id"])
-        and not is_bot_owner(ctx.author)
-    ):
-        await ctx.send("Bu odayı yalnızca oda sahibi kullanabilir.")
-        return
-
     if not query:
-        track = current_tracks.get(ctx.guild.id)
-
-        if track:
-            description = (
-                f"**Şimdi çalıyor:** [{track['title']}]({track['url']})\n"
-                "Müziği aşağıdaki düğmelerle yönetebilirsin."
-            )
-        else:
-            description = (
-                "Müzik başlatmak için `!Play şarkı adı` "
-                "veya YouTube bağlantısı gönder."
-            )
-
-        await send_voice_chat(
-            voice_channel,
-            embed=discord.Embed(
-                title="🎵 HELY MÜZİK",
-                description=description,
-                color=discord.Color.blurple(),
-            ),
-            view=MusicControls(voice_channel.id),
+        await ctx.send("Kullanım: `!play şarkı adı veya YouTube bağlantısı`")
+        return
+    if ctx.author.id in data["banned_users"]:
+        await ctx.send("Müzik kullanman engellenmiş.")
+        return
+    if remaining_songs(ctx.author.id) <= 0:
+        await ctx.send(
+            f"Günlük şarkı hakkın bitti. Günlük limit: {DAILY_SONG_LIMIT}"
         )
         return
-
-    if (
-        not has_unlimited_access(ctx.author)
-        and remaining_songs(ctx.author.id) <= 0
-    ):
-        await ctx.send("❌ Günlük 10 şarkı hakkın bitti.")
-        return
-
-    status = await ctx.send("🔎 YouTube aranıyor...")
-
     try:
-        track = await asyncio.to_thread(search_youtube, query)
-
-    except Exception as exc:
-        print(f"[YOUTUBE ARAMA HATASI] {type(exc).__name__}: {exc}")
-        traceback.print_exc()
-
-        await status.edit(
-            content=(
-                "❌ YouTube'da şarkı bulunamadı veya YouTube isteği başarısız oldu.\n"
-                "FadeHost konsolundaki **YOUTUBE ARAMA HATASI** satırını kontrol et."
+        async with ctx.typing():
+            track = await search_track(query)
+        if not track:
+            await ctx.send("YouTube'da şarkı bulunamadı.")
+            return
+        if track.get("banned"):
+            await ctx.send("🚫 Bu şarkı yasaklandığı için çalınamaz.")
+            return
+        track["requester"] = ctx.author.id
+        guild_id = ctx.guild.id
+        get_queue(guild_id).append(track)
+        await ctx.send(
+            f"➕ **{track['title']}** kuyruğa eklendi."
+        )
+        if guild_id not in player_tasks:
+            player_tasks[guild_id] = asyncio.create_task(
+                music_player(ctx)
             )
+    except Exception as exc:
+        await ctx.send(
+            f"Şarkı aranırken hata oluştu: `{type(exc).__name__}`"
+        )
+# ==================================================
+# !SES - YALNIZCA BOT SAHİBİ
+# ==================================================
+@bot.command(name="ses")
+async def ses(ctx):
+    if not is_owner(ctx.author):
+        await ctx.send("❌ Bu komutu yalnızca bot sahibi kullanabilir.")
+        return
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.send(
+            "Önce katılmak istediğin ses kanalına gir, sonra `!ses` yaz."
         )
         return
-
-    track["requester_id"] = ctx.author.id
-    track["voice_channel_id"] = voice_channel.id
-    track["guild_id"] = ctx.guild.id
-
-    await get_queue(ctx.guild.id).put(track)
-
-    await status.edit(
-        content=f"➕ **Kuyruğa eklendi:** {track['title']}"
-    )
-
-    task = player_tasks.get(ctx.guild.id)
-
-    if task is None or task.done():
-        player_tasks[ctx.guild.id] = asyncio.create_task(
-            music_player(ctx.guild.id)
+    channel = ctx.author.voice.channel
+    voice = ctx.guild.voice_client
+    try:
+        if voice is None:
+            await channel.connect()
+        elif voice.channel != channel:
+            await voice.move_to(channel)
+        await ctx.send(f"✅ **{channel.name}** kanalına katıldım.")
+    except Exception as exc:
+        await ctx.send(
+            f"Ses kanalına katılamadım: `{type(exc).__name__}`"
         )
-
-
-# =========================================================
-# SAHİBE ÖZEL AYARLAR
-# =========================================================
-
-class GrantSongsModal(discord.ui.Modal, title="Dinleme Hakkı Ver"):
-    amount = discord.ui.TextInput(
-        label="Ek şarkı sayısı veya Sınırsız",
-        placeholder="Örn: 12 veya Sınırsız",
-        max_length=20,
+# ==================================================
+# AYARLAR MODALLARI
+# ==================================================
+class ActivityModal(Modal, title="Bot Etkinlik Yazısı"):
+    activity = TextInput(
+        label="Profilde görünecek yazı",
+        placeholder="Örn. Ahmet müzik dinliyor",
+        max_length=128,
+        required=True
     )
-
+    async def on_submit(self, interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message(
+                "Bu ayarı yalnızca bot sahibi kullanabilir.",
+                ephemeral=True
+            )
+            return
+        data["presence"]["activity"] = self.activity.value
+        save_data(data)
+        await apply_presence()
+        await interaction.response.send_message(
+            "✅ Botun profil etkinliği güncellendi.",
+            ephemeral=True
+        )
+class BanSongModal(Modal, title="Şarkı Yasakla"):
+    url = TextInput(
+        label="YouTube bağlantısı veya video kimliği",
+        placeholder="https://www.youtube.com/watch?v=...",
+        max_length=300,
+        required=True
+    )
+    async def on_submit(self, interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message(
+                "Bu ayarı yalnızca bot sahibi kullanabilir.",
+                ephemeral=True
+            )
+            return
+        value = self.url.value.strip()
+        video_id = get_video_id(value) if is_youtube_url(value) else value
+        if not video_id:
+            await interaction.response.send_message(
+                "Geçerli bir YouTube bağlantısı veya video kimliği gir.",
+                ephemeral=True
+            )
+            return
+        if video_id.casefold() not in [
+            x.casefold() for x in data["banned_songs"]
+        ]:
+            data["banned_songs"].append(video_id)
+        save_data(data)
+        await interaction.response.send_message(
+            "🚫 Şarkı yasak listesine eklendi.",
+            ephemeral=True
+        )
+class BanArtistModal(Modal, title="Sanatçı Yasakla"):
+    artist = TextInput(
+        label="Sanatçı adı",
+        placeholder="Sanatçı adını yaz",
+        max_length=100,
+        required=True
+    )
+    async def on_submit(self, interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message(
+                "Bu ayarı yalnızca bot sahibi kullanabilir.",
+                ephemeral=True
+            )
+            return
+        name = self.artist.value.strip()
+        if name.casefold() not in [
+            x.casefold() for x in data["banned_artists"]
+        ]:
+            data["banned_artists"].append(name)
+        save_data(data)
+        await interaction.response.send_message(
+            f"🚫 **{name}** yasaklı sanatçılara eklendi.",
+            ephemeral=True
+        )
+class GrantLimitModal(Modal, title="Şarkı Hakkı Ver"):
+    amount = TextInput(
+        label="Hak sayısı veya sınırsız",
+        placeholder="12 veya sınırsız",
+        max_length=20,
+        required=True
+    )
     def __init__(self, target):
         super().__init__()
         self.target = target
-
     async def on_submit(self, interaction):
-        if not is_bot_owner(interaction.user):
+        if interaction.user.id != OWNER_ID:
             await interaction.response.send_message(
-                "Bu işlem yalnızca bot sahibine açık.",
-                ephemeral=True,
+                "Bu ayarı yalnızca bot sahibi kullanabilir.",
+                ephemeral=True
             )
             return
-
-        value = str(self.amount.value).strip().casefold()
-        target_id = str(self.target.id)
-
+        value = self.amount.value.strip().casefold()
+        user_id = self.target.id
         if value in ("sınırsız", "sinirsiz", "unlimited"):
-            if target_id not in data["unlimited_users"]:
-                data["unlimited_users"].append(target_id)
-
-            save_data()
-
-            await interaction.response.send_message(
-                f"♾️ {self.target.mention} için sınırsız ve reklamsız erişim verildi.",
-                ephemeral=True,
+            if user_id not in data["unlimited_users"]:
+                data["unlimited_users"].append(user_id)
+            data["users"].pop(str(user_id), None)
+            save_data(data)
+            message = f"✅ {self.target.mention} için sınırsız hak açıldı."
+        else:
+            try:
+                amount = int(value)
+                if amount < 0 or amount > 100000:
+                    raise ValueError
+            except ValueError:
+                await interaction.response.send_message(
+                    "0 ile 100000 arasında sayı veya `sınırsız` yaz.",
+                    ephemeral=True
+                )
+                return
+            if user_id in data["unlimited_users"]:
+                data["unlimited_users"].remove(user_id)
+            user = get_user_data(user_id)
+            user["bonus"] += amount
+            save_data(data)
+            message = (
+                f"✅ {self.target.mention} kullanıcısına "
+                f"**{amount}** ek şarkı hakkı verildi."
             )
-            return
-
-        try:
-            amount = int(value)
-        except ValueError:
-            await interaction.response.send_message(
-                "Bir sayı veya Sınırsız yaz.",
-                ephemeral=True,
-            )
-            return
-
-        if not 1 <= amount <= 100000:
-            await interaction.response.send_message(
-                "Sayı 1 ile 100000 arasında olmalı.",
-                ephemeral=True,
-            )
-            return
-
-        if target_id in data["unlimited_users"]:
-            data["unlimited_users"].remove(target_id)
-
-        user = get_user_data(self.target.id)
-        user["bonus_songs"] += amount
-        save_data()
-
         await interaction.response.send_message(
-            f"✅ {self.target.mention} kullanıcısına {amount} ek şarkı hakkı verildi.",
-            ephemeral=True,
+            message,
+            ephemeral=True
         )
-
-
-class GrantSongsView(discord.ui.View):
-    @discord.ui.select(
-        cls=discord.ui.UserSelect,
-        placeholder="Kullanıcı seç",
-        min_values=1,
-        max_values=1,
-    )
-    async def select_user(self, interaction, select):
-        if not is_bot_owner(interaction.user):
+# ==================================================
+# AYARLAR PANELİ - SADECE BOT SAHİBİ
+# ==================================================
+class SettingsView(View):
+    def __init__(self):
+        super().__init__(timeout=300)
+    async def interaction_check(self, interaction):
+        if interaction.user.id != OWNER_ID:
             await interaction.response.send_message(
-                "Bu işlem yalnızca bot sahibine açık.",
-                ephemeral=True,
+                "❌ Bu paneli yalnızca bot sahibi kullanabilir.",
+                ephemeral=True
             )
-            return
-
-        await interaction.response.send_modal(
-            GrantSongsModal(select.values[0])
-        )
-
-
-class SettingsView(discord.ui.View):
+            return False
+        return True
     @discord.ui.button(
-        label="Şarkı Hakkı Ver",
-        emoji="🎵",
-        style=discord.ButtonStyle.success,
+        label="Etkinlik Yazısı",
+        emoji="📝",
+        style=discord.ButtonStyle.primary
     )
-    async def grant(self, interaction, button):
-        if not is_bot_owner(interaction.user):
+    async def activity_button(self, interaction, button):
+        await interaction.response.send_modal(ActivityModal())
+    @discord.ui.button(
+        label="Bot Durumu",
+        emoji="🟢",
+        style=discord.ButtonStyle.primary
+    )
+    async def status_button(self, interaction, button):
+        await interaction.response.send_message(
+            "Botun durumunu seç:",
+            view=PresenceSelectView(),
+            ephemeral=True
+        )
+    @discord.ui.button(
+        label="Şarkı Yasakla",
+        emoji="🚫",
+        style=discord.ButtonStyle.danger
+    )
+    async def ban_song_button(self, interaction, button):
+        await interaction.response.send_modal(BanSongModal())
+    @discord.ui.button(
+        label="Sanatçı Yasakla",
+        emoji="🎤",
+        style=discord.ButtonStyle.danger
+    )
+    async def ban_artist_button(self, interaction, button):
+        await interaction.response.send_modal(BanArtistModal())
+    @discord.ui.button(
+        label="Kullanıcıya Hak Ver",
+        emoji="🎟️",
+        style=discord.ButtonStyle.success
+    )
+    async def grant_button(self, interaction, button):
+        await interaction.response.send_message(
+            "Hak vereceğin kullanıcıyı seç:",
+            view=GrantUserView(),
+            ephemeral=True
+        )
+class PresenceSelect(Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Çevrimiçi",
+                value="online",
+                emoji="🟢"
+            ),
+            discord.SelectOption(
+                label="Boşta",
+                value="idle",
+                emoji="🌙"
+            ),
+            discord.SelectOption(
+                label="Rahatsız Etmeyin",
+                value="dnd",
+                emoji="⛔"
+            ),
+            discord.SelectOption(
+                label="Görünmez",
+                value="invisible",
+                emoji="⚫"
+            )
+        ]
+        super().__init__(
+            placeholder="Yeni bot durumunu seç",
+            options=options
+        )
+    async def callback(self, interaction):
+        data["presence"]["status"] = self.values[0]
+        save_data(data)
+        await apply_presence()
+        await interaction.response.send_message(
+            "✅ Bot durumu güncellendi.",
+            ephemeral=True
+        )
+class PresenceSelectView(View):
+    def __init__(self):
+        super().__init__(timeout=60)
+        self.add_item(PresenceSelect())
+class GrantUserView(View):
+    def __init__(self):
+        super().__init__(timeout=120)
+        self.add_item(GrantUserSelect())
+class GrantUserSelect(UserSelect):
+    def __init__(self):
+        super().__init__(
+            placeholder="Şarkı hakkı verilecek kullanıcı",
+            min_values=1,
+            max_values=1
+        )
+    async def callback(self, interaction):
+        target = self.values[0]
+        if target.bot:
             await interaction.response.send_message(
-                "Bu panel yalnızca bot sahibine açık.",
-                ephemeral=True,
+                "Botlara şarkı hakkı verilemez.",
+                ephemeral=True
             )
             return
-
-        await interaction.response.send_message(
-            "Kullanıcı seç:",
-            view=GrantSongsView(),
-            ephemeral=True,
+        await interaction.response.send_modal(
+            GrantLimitModal(target)
         )
-
-
+# ==================================================
+# BOT DURUMUNU UYGULA
+# ==================================================
+async def apply_presence():
+    status_name = data["presence"].get("status", "online")
+    activity_text = data["presence"].get(
+        "activity",
+        "HELY MÜZİK"
+    )
+    statuses = {
+        "online": discord.Status.online,
+        "idle": discord.Status.idle,
+        "dnd": discord.Status.dnd,
+        "invisible": discord.Status.invisible
+    }
+    status = statuses.get(status_name, discord.Status.online)
+    await bot.change_presence(
+        status=status,
+        activity=discord.Game(name=activity_text)
+    )
 @bot.command(name="ayarlar")
 async def settings(ctx):
-    if not is_bot_owner(ctx.author):
+    if ctx.author.id != OWNER_ID:
+        await ctx.send(
+            "❌ `!!ayarlar` komutunu yalnızca bot sahibi kullanabilir."
+        )
         return
-
-    await ctx.send(
-        embed=discord.Embed(
-            title="⚙️ HELY MÜZİK • Yönetim",
-            description=(
-                "Kullanıcıya ek şarkı hakkı veya sınırsız erişim verebilirsin."
-            ),
-            color=discord.Color.blurple(),
+    embed = discord.Embed(
+        title="⚙️ HELY MÜZİK • Yönetim Paneli",
+        description=(
+            "Bu panel yalnızca bot sahibine açıktır.\n\n"
+            "📝 Profil etkinlik yazısını değiştir\n"
+            "🟢 Çevrimiçi durumunu ayarla\n"
+            "🚫 Şarkı yasakla\n"
+            "🎤 Sanatçı yasakla\n"
+            "🎟️ Kullanıcıya ek şarkı hakkı ver"
         ),
-        view=SettingsView(),
+        color=discord.Color.blue()
     )
-
-
-# =========================================================
-# ENGELLEME KOMUTLARI
-# =========================================================
-
-@bot.command(name="banuser")
-async def ban_user(ctx, user_id: int):
-    if not is_bot_owner(ctx.author):
-        return
-
-    if user_id not in data["banned_users"]:
-        data["banned_users"].append(user_id)
-
-    save_data()
-    await ctx.send(f"⛔ `{user_id}` müzikten engellendi.")
-
-
-@bot.command(name="unbanuser")
-async def unban_user(ctx, user_id: int):
-    if not is_bot_owner(ctx.author):
-        return
-
-    if user_id in data["banned_users"]:
-        data["banned_users"].remove(user_id)
-
-    save_data()
-    await ctx.send(f"✅ `{user_id}` müzik engeli kaldırıldı.")
-
-
-@bot.command(name="banartist")
-async def ban_artist(ctx, *, artist: str):
-    if not is_bot_owner(ctx.author):
-        return
-
-    if artist.casefold() not in [
-        item.casefold() for item in data["banned_artists"]
-    ]:
-        data["banned_artists"].append(artist)
-
-    save_data()
-    await ctx.send(f"⛔ Sanatçı engellendi: **{artist}**")
-
-
-@bot.command(name="unbanartist")
-async def unban_artist(ctx, *, artist: str):
-    if not is_bot_owner(ctx.author):
-        return
-
-    data["banned_artists"] = [
-        item for item in data["banned_artists"]
-        if item.casefold() != artist.casefold()
-    ]
-
-    save_data()
-    await ctx.send(f"✅ Sanatçı engeli kaldırıldı: **{artist}**")
-
-
+    await ctx.send(embed=embed, view=SettingsView())
+# ==================================================
+# YASAK YÖNETİMİ - SADECE BOT SAHİBİ
+# ==================================================
 @bot.command(name="bansong")
-async def ban_song(ctx, *, song: str):
-    if not is_bot_owner(ctx.author):
+async def ban_song(ctx, *, value=None):
+    if not is_owner(ctx.author):
         return
-
-    if song.casefold() not in [
-        item.casefold() for item in data["banned_songs"]
+    if not value:
+        await ctx.send("Kullanım: `!bansong YouTube bağlantısı`")
+        return
+    video_id = get_video_id(value) if is_youtube_url(value) else value
+    if video_id and video_id.casefold() not in [
+        x.casefold() for x in data["banned_songs"]
     ]:
-        data["banned_songs"].append(song)
-
-    save_data()
-    await ctx.send(f"⛔ Şarkı engellendi: **{song}**")
-
-
+        data["banned_songs"].append(video_id)
+        save_data(data)
+    await ctx.send("🚫 Şarkı yasaklandı.")
 @bot.command(name="unbansong")
-async def unban_song(ctx, *, song: str):
-    if not is_bot_owner(ctx.author):
+async def unban_song(ctx, *, value=None):
+    if not is_owner(ctx.author):
         return
-
+    if not value:
+        await ctx.send("Kullanım: `!unbansong video_id`")
+        return
+    video_id = get_video_id(value) if is_youtube_url(value) else value
     data["banned_songs"] = [
-        item for item in data["banned_songs"]
-        if item.casefold() != song.casefold()
+        x for x in data["banned_songs"]
+        if x.casefold() != video_id.casefold()
     ]
-
-    save_data()
-    await ctx.send(f"✅ Şarkı engeli kaldırıldı: **{song}**")
-
-
-# =========================================================
-# ODA SAHİBİ AYRILIRSA ODAYI SİL
-# =========================================================
-
+    save_data(data)
+    await ctx.send("✅ Şarkı yasağı kaldırıldı.")
+@bot.command(name="banartist")
+async def ban_artist(ctx, *, name=None):
+    if not is_owner(ctx.author):
+        return
+    if not name:
+        await ctx.send("Kullanım: `!banartist sanatçı adı`")
+        return
+    if name.casefold() not in [
+        x.casefold() for x in data["banned_artists"]
+    ]:
+        data["banned_artists"].append(name)
+    save_data(data)
+    await ctx.send(f"🚫 **{name}** yasaklandı.")
+@bot.command(name="unbanartist")
+async def unban_artist(ctx, *, name=None):
+    if not is_owner(ctx.author):
+        return
+    if not name:
+        await ctx.send("Kullanım: `!unbanartist sanatçı adı`")
+        return
+    data["banned_artists"] = [
+        x for x in data["banned_artists"]
+        if x.casefold() != name.casefold()
+    ]
+    save_data(data)
+    await ctx.send(f"✅ **{name}** yasağı kaldırıldı.")
+@bot.command(name="banuser")
+async def ban_user(ctx, member: discord.Member = None):
+    if not is_owner(ctx.author):
+        return
+    if member is None:
+        await ctx.send("Kullanım: `!banuser @kullanıcı`")
+        return
+    if member.id not in data["banned_users"]:
+        data["banned_users"].append(member.id)
+    save_data(data)
+    await ctx.send(f"🚫 {member.mention} müzik kullanamaz.")
+@bot.command(name="unbanuser")
+async def unban_user(ctx, member: discord.Member = None):
+    if not is_owner(ctx.author):
+        return
+    if member is None:
+        await ctx.send("Kullanım: `!unbanuser @kullanıcı`")
+        return
+    data["banned_users"] = [
+        user_id for user_id in data["banned_users"]
+        if user_id != member.id
+    ]
+    save_data(data)
+    await ctx.send(f"✅ {member.mention} için müzik yasağı kaldırıldı.")
+# ==================================================
+# SES ODASI SAHİBİ AYRILINCA
+# ==================================================
 @bot.event
 async def on_voice_state_update(member, before, after):
     if member.bot or before.channel is None:
         return
-
-    room = get_room(before.channel.id)
-
+    room = get_room(member.guild.id)
     if not room:
         return
-
-    if member.id != int(room["owner_id"]):
-        return
-
-    if after.channel and after.channel.id == before.channel.id:
-        return
-
-    voice_id = int(room["voice_id"])
-    guild = member.guild
-
-    data["rooms"].pop(str(voice_id), None)
-    save_data()
-
-    voice = guild.voice_client
-
-    if voice and voice.channel and voice.channel.id == voice_id:
-        try:
-            await voice.disconnect(force=True)
-        except discord.HTTPException:
-            pass
-
-    channel = guild.get_channel(voice_id)
-
-    if channel:
-        try:
-            await channel.delete(
-                reason="Müzik odasının sahibi ayrıldı."
-            )
-        except discord.HTTPException as exc:
-            print(f"[ODA SİLME HATASI] {exc}")
-
-
-# =========================================================
-# BAŞLANGIÇ VE TOKEN
-# =========================================================
-
+    if (
+        before.channel.id == room["channel_id"]
+        and member.id == room["owner_id"]
+        and after.channel != before.channel
+    ):
+        channel = member.guild.get_channel(room["channel_id"])
+        if channel:
+            try:
+                voice = member.guild.voice_client
+                if voice and voice.channel == channel:
+                    await voice.disconnect()
+                await channel.delete(
+                    reason="Özel oda sahibi ses kanalından ayrıldı."
+                )
+            except discord.HTTPException:
+                pass
+        data["rooms"].pop(str(member.guild.id), None)
+        save_data(data)
+# ==================================================
+# BOT BAŞLANGICI
+# ==================================================
 @bot.event
 async def on_ready():
-    print(f"HELY MÜZİK giriş yaptı: {bot.user} ({bot.user.id})")
-
-    changed = False
-
-    for voice_id, room in list(data["rooms"].items()):
-        guild = bot.get_guild(int(room["guild_id"]))
-        channel = guild.get_channel(int(voice_id)) if guild else None
-
-        if channel is None:
-            data["rooms"].pop(voice_id, None)
-            changed = True
-
-    if changed:
-        save_data()
-
-    bot.add_view(CreateRoomView())
-
-    print("HELY MÜZİK hazır.")
-
-
-def load_token():
-    token = os.getenv("DISCORD_TOKEN")
-
-    if token:
-        return token.strip()
-
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as file:
-                config = json.load(file)
-
-            if config.get("token"):
-                return str(config["token"]).strip()
-
-        except (OSError, json.JSONDecodeError) as exc:
-            print(f"[TOKEN DOSYASI] {exc}")
-
-    return None
-
-
-token = load_token()
-
+    print(f"HELY MÜZİK giriş yaptı: {bot.user}")
+    try:
+        await apply_presence()
+    except Exception as exc:
+        print("Durum ayarlanamadı:", exc)
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("Komutun kullanımı eksik.")
+        return
+    print("Komut hatası:", repr(error))
+    await ctx.send("Komut çalıştırılırken bir hata oluştu.")
+# ==================================================
+# TOKEN
+# ==================================================
+token = os.getenv("DISCORD_TOKEN")
+if not token and os.path.exists(CONFIG_FILE):
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            token = config.get("token")
+    except Exception:
+        pass
 if not token:
     raise RuntimeError(
-        "Token bulunamadı. FadeHost ortam değişkenlerine "
-        "DISCORD_TOKEN ekle."
+        "DISCORD_TOKEN ortam değişkenini veya config.json içindeki token değerini ayarla."
     )
-
 bot.run(token)
+
+Gerekli paketler
+
+FadeHost üzerindeki requirements.txt dosyasında şunlar bulunmalı:
+
+discord.py
+yt-dlp
+PyNaCl
+
+Sunucuda ayrıca FFmpeg bulunmalı. Discord Developer Portal’da Message Content Intent ve Server Members Intent ayarlarını etkinleştir.
+
+Komutlar:
+
+* !play şarkı adı — herkes kullanabilir.
+* !ses — yalnızca sen kullanabilirsin; bulunduğun ses kanalına girer.
+* !!ayarlar — yalnızca sen kullanabilirsin.
+* !bansong, !unbansong, !banartist, !unbanartist, !banuser, !unbanuser — yalnızca sen kullanabilirsin.
+
+Not: Bu, temel özellikleri birleştiren tam bir başlangıç sürümüdür; mevcut kodunun birebir korunmuş ve canlı sunucuda test edilmiş bir kopyası değildir. Özel oda oluşturma butonu, önceki müzik panelindeki tüm kontroller ve reklam akışının eski sürümdeki davranışları burada birebir korunmamıştır.
